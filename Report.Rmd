@@ -1,0 +1,104 @@
+---
+title: "Human Activity Recognition Model"
+output: html_document
+---
+
+## Executive Summary
+In this report I will deal with data from accelerometers of 6 participants, and develop a model to predict activity quality by using machine learning algorithms in CARET Package of R programming language. These models will be used to predict outcome of the new data
+
+First, let's set global options and load necessary libraries.
+```{r}
+# knitr configuration
+library(knitr)
+opts_knit$set(progress=FALSE)
+opts_chunk$set(echo=TRUE, message=FALSE, tidy=TRUE, comment=NA,
+               fig.path="figure/", fig.keep="high", fig.width=10, fig.height=6)
+# load required libs
+library(caret, quietly=TRUE, warn.conflicts=FALSE)
+library(lattice, quietly=TRUE, warn.conflicts=FALSE)
+library(randomForest, quietly=TRUE, warn.conflicts=FALSE)
+```
+
+## Data Processing
+
+Loading and preprocessing the data.
+```{r}
+if (!file.exists("pml-training.csv")) {
+      fileurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+      download.file(fileurl, destfile = "./pml-training.csv")      
+}
+if (!file.exists("pml-testing.csv")) {
+      fileurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+      download.file(fileurl, destfile = "./pml-testing.csv")      
+}
+dataTraining <- read.csv("./pml-training.csv", na.strings= c("NA",""," "))
+```
+
+There are a lot of variables full of NA values that only introduce noise. So I subset the dataset and only choose 52 variables as predictors.
+Moreover, the first 7 columns that contain metadata not pertinent to the prediction model are also removed.
+
+```{r}
+# clean the data by removing columns with NAs 
+dataTraining_val<- colSums(is.na(dataTraining))==0
+# 52 features are selected as predictors
+features <- colnames(dataTraining[dataTraining_val])[8:59]
+trainingData <- dataTraining[,c(features,"classe")]
+```
+
+## Data partitioning
+
+The training data set is split up into training and cross validation sets in a 70:30 ratio for building the model and be ready for cross validation.
+
+```{r}
+set.seed(2046)
+inTrain = createDataPartition(trainingData$classe, p = 0.7, list = F)
+training = trainingData[inTrain,]
+validating = trainingData[-inTrain,]
+
+```
+
+## Model building
+
+First, let's analyze the correlation between features to see how strong the variables relationships are with each other. As we can see from the plot below,there is not much concern for highly correlated predictors, so we can include all of them in the model.
+
+```{r}
+# plot a correlation matrix
+correlation <- cor(training[, -length(training)])
+palette <- colorRampPalette(c("green", "red"), space = "rgb")
+levelplot(correlation, main="Correlation Level Plot", xlab="",ylab="",aspect=1, col.regions=palette(120), pretty=TRUE, cuts=100, at=seq(0,1,0.01), scales=list(x=list(rot=90)) )
+```
+
+After a preliminary analysis (not reported here), I choose to run a Random Forest model for that it works well on the data set. Random forest model runtime is quite fast, and it is able to deal with unbalanced and missing data.
+
+```{r}
+model <- randomForest(classe~.,data=training, importance=TRUE)
+model
+```
+The model seems to fit very well. The out-of-bag (OOB) error estimate is 0.5%,  and it can be deemed satisfactory enough to progress the testing.
+
+## Cross validation
+The model is then used to classify the remaining 30% of data. Here follows the in sample accuracy (which is the prediction accuracy of the model on the training dataset) and out sample accuracy (which is the prediction accuracy of the model on the validation dataset).
+
+```{r}
+# in sample accuracy
+confusionMatrix(training$classe, model$predicted)
+# out of sample error to be estimated
+CrossVal <- predict(model, validating)
+confusionMatrix(validating$classe, CrossVal)
+```
+Both accuracies are over 99%. The model well fit the prediction.
+
+## Prediction
+Here, I apply the model built above, to the testing dataset provided.
+
+```{r}
+# apply the same treatment to the testing data
+dataTesting <- read.csv("./pml-testing.csv", na.strings= c("NA",""," "))
+dataTesting_val<- colSums(is.na(dataTesting))==0
+features <- colnames(dataTesting[dataTesting_val])[8:59]
+testingData <- dataTesting[,c(features,"problem_id")]
+
+# predict the classes of the test set
+testPredict <- predict(model, testingData)
+testPredict
+```
